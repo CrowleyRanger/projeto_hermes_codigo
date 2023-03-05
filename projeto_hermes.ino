@@ -1,8 +1,8 @@
 #include <Wire.h>
 
 // Sensor SHT2: Temperatura do ar e umidade relativa
-#include "DFRobot_SHT20.h" // importando a biblioteca ./lib/DFRobot_SHT20
-DFRobot_SHT20 sht20; // declarando objeto do tipo DFRobot_SHT20
+#include "DFRobot_SHT20.h" // Importando a biblioteca ./lib/DFRobot_SHT20
+DFRobot_SHT20 sht20; // Inicializando objeto do tipo DFRobot_SHT20
 
 // Sensor PB10: Pluviometro
 const int REED = 6;
@@ -21,6 +21,19 @@ unsigned int sv10_RPM = 0; // Revolucoes por minuto
 float windspeed_ms = 0; // Velocidade do vento (m/s)
 float windspeed_kmh = 0; // Velocidade do vento (km/h)
 
+// Sensor BMP280: Pressão barométrica
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BMP280.h>
+Adafruit_BMP280 bmp; // Inicializando objeto do tipo Adafruit_BMP280 (I2C)
+
+// Sensor DS18B20: Temperatura da água
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#define ds18b20_data 2
+OneWire oneWire(ds18b20_data);
+DallasTemperature ds18b20_sensor(&oneWire);
+
+// ******************** VOID SETUP ******************** //
 void setup() {
   Serial.begin(9600);
 
@@ -32,20 +45,25 @@ void setup() {
   pinMode(REED, INPUT_PULLUP);
 
   // SV10
-  pinMode(2, INPUT);
-  digitalWrite(2, HIGH);
+  pinMode(3, INPUT);
+  digitalWrite(3, HIGH);
 
+  // DS18B20
+  ds18b20_sensor.begin(); // Inicia a biblioteca DallasTemperature
+  
 }
+// ******************** // ******************** //
 
+// ******************** VOID LOOP ******************** //
 void loop() {
 
   // ***** SHT20 ***** //
   float umd = sht20.readHumidity();
   float temp = sht20.readTemperature();
-  Serial.print("Temperature: ");
+  Serial.print("TEMPERATURE: ");
   Serial.print(temp, 1); // Mostra 1 numero apos o ponto
   Serial.print("C");
-  Serial.print("Humidity: ");
+  Serial.print("HUMIDITY: ");
   Serial.print(umd, 1); // Mostra 1 numero apos o ponto
   Serial.print("%");
   Serial.println();
@@ -61,10 +79,10 @@ void loop() {
     // Imprime o resultado no monitor serial
     Serial.print("Pluviometric measure (counter): ");
     Serial.print(REEDCOUNT);
-    Serial.println("pulse(s)");
+    Serial.println(" pulse(s)");
     Serial.print("Pluviometric measure (calculating): ");
     Serial.print(REEDCOUNT * 0.25);
-    Serial.print;n("mm");
+    Serial.println(" mm");
   }
   else {
     pb10_old_val = pb10_val; // Nao realizar nada, caso o status nao mude
@@ -75,23 +93,47 @@ void loop() {
   Serial.print("Measuring wind speed...");
   windvelocity();
   Serial.println(" Finished.");
-  Serial.print("Counter: ");
+  Serial.print("SV10 ROTATIONS PER MINUTE: ");
   Serial.print(sv10_counter);
   Serial.println(" RPM");
   RPMcalc();
   Serial.print(sv10_RPM);
-  Serial.print("Wind speed: ");
+  Serial.print("WIND SPEED: ");
   // SV10: Imprimir m/s
   WindSpeed_ms();
   Serial.print(windspeed_ms);
-  Serial.println(" m/s"); 
+  Serial.println(" m/s; "); 
   // SV10: Imprimir km/s
   WindSpeed_kmh();
   Serial.print(windspeed_kmh);
   Serial.println(" km/h");  
   delay(2000);
-}
 
+  // ***** BMP280 ***** //
+    //Serial.print(F("Temperature: "));
+    //Serial.print(bmp.readTemperature()); // A temperatura está sendo medida pelo SHT22
+    //Serial.println(" *C");
+    
+    Serial.print("PRESSURE: ");
+    Serial.print(bmp.readPressure());
+    Serial.println(" Pa");
+ 
+    //Serial.print(F("Aprox. altitude: "));
+    //Serial.print(bmp.readAltitude(1013.25),0);
+    //Serial.println(" m");
+    delay(2000);
+
+    // ***** DS18B20 ***** //
+    Serial.print("WATER TEMPERATURE: ");
+    ds18b20_sensor.requestTemperatures();
+    Serial.println(ds18b20_sensor.getTempCByIndex(0));
+
+}
+// ******************** // ******************** //
+
+// ******************** FUNCTIONS ******************** //
+
+// ***** SV10 ***** //
 void windvelocity(){
   windspeed_ms = 0;
   windspeed_kmh = 0;
@@ -103,21 +145,18 @@ void windvelocity(){
   while(millis() < startTime + sv10_period) {
   }
 }
-
 void RPMcalc(){
   sv10_RPM=((sv10_counter)*60)/(sv10_period/1000);  // Calculo de RPM
 }
-
 void WindSpeed_ms(){
   windspeed_ms = ((4 * pi * sv10_radius * sv10_RPM)/60) / 1000;  // Calculo da velocidade do vento em m/s
  
 }
-
 void WindSpeed_kmh(){
   windspeed_kmh = (((4 * pi * sv10_radius * sv10_RPM)/60) / 1000)*3.6;  // Calculo da velocidade do vento em km/h
  
 }
-
 void addcount(){
   sv10_counter++;
 }
+// ******************** // ******************** //
