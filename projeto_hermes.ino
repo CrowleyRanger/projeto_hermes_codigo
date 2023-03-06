@@ -1,4 +1,12 @@
 #include <Wire.h>
+int DATA_REQUEST_DELAY = 900000; // 15min // A cada tempo DATA_REQUEST_DELAY os dados sao adquiridos e salvos num arquivo
+int loop_num = 0;
+
+// SD Card
+#include <SD.h>
+#include <SPI.h>
+File saveFile;
+int pinSS = 10;
 
 // Sensor SHT2: Temperatura do ar e umidade relativa
 #include "DFRobot_SHT20.h" // Importando a biblioteca ./lib/DFRobot_SHT20
@@ -33,13 +41,27 @@ Adafruit_BMP280 bmp; // Inicializando objeto do tipo Adafruit_BMP280 (I2C)
 OneWire oneWire(ds18b20_data);
 DallasTemperature ds18b20_sensor(&oneWire);
 
-// ******************** VOID SETUP ******************** //
+// **************************************** VOID SETUP **************************************** //
 void setup() {
   Serial.begin(9600);
 
+  // SD Card //
+  pinMode(pinSS, OUTPUT); // Declara pinoSS como saída
+  
+  if (SD.begin()) { // Inicializa o SD Card
+    Serial.println("SD Card READY."); // Imprime na tela
+    Serial.print("// ***** Loop number: "); Serial.print(loop_num); Serial.println(" ***** //");
+    saveFile.print("// ***** Loop number: "); saveFile.print(loop_num); saveFile.println(" ***** //");
+    loop_num++;
+  }
+  
+  else {
+    Serial.println("SD Card initialization FAIL.");
+    return;
+  }
+
   // SHT20
-  Serial.println("Exemplo SHT20");
-  sht20.initSHT20();
+  sht20.initSHT20(); // Inicializando o SHT20
 
   // PB10
   pinMode(REED, INPUT_PULLUP);
@@ -52,86 +74,97 @@ void setup() {
   ds18b20_sensor.begin(); // Inicia a biblioteca DallasTemperature
   
 }
-// ******************** // ******************** //
 
-// ******************** VOID LOOP ******************** //
+// **************************************** VOID LOOP **************************************** //
 void loop() {
 
-  // ***** SHT20 ***** //
-  float umd = sht20.readHumidity();
-  float temp = sht20.readTemperature();
-  Serial.print("TEMPERATURE: ");
-  Serial.print(temp, 1); // Mostra 1 numero apos o ponto
-  Serial.print("C");
-  Serial.print("HUMIDITY: ");
-  Serial.print(umd, 1); // Mostra 1 numero apos o ponto
-  Serial.print("%");
-  Serial.println();
+  // ********** SD Card OPEN ********** //
+  
+  saveFile = SD.open("saveFile.txt", FILE_WRITE); // Cria e/ou abre arquivo .txt
+  if (saveFile) { // Se o arquivo abrir imprime:
+    Serial.println("Data will be saved at \'.txt\' file."); // Imprime na tela
+  }
+  else {     // Se o arquivo não abrir
+    Serial.println("Save file opening ERROR!"); // Imprime na tela
+  }
+
+  // ********** SHT20 ********** //
+
+  // SHT20: Temperatura do ar
+  float air_temp = sht20.readTemperature();
+  Serial.print("AIR TEMPERATURE: "); Serial.print(air_temp, 1); Serial.println("C");
+  saveFile.print("AIR TEMPERATURE: "); saveFile.print(air_temp, 1); saveFile.println("C");
+
+  // SHT20: Umidade relativa do ar
+  float humidity = sht20.readHumidity();
+  Serial.print("HUMIDITY: "); Serial.print(humidity, 1); Serial.println("%");
+  saveFile.print("HUMIDITY: "); saveFile.print(humidity, 1); saveFile.println("%");
   delay(1000);
 
-  // ***** PB10 ***** //
+  // ********** PB10 ********** //
+
   pb10_val = digitalRead(REED); // Le o status do reed switch
   if ((pb10_val == LOW) && (pb10_old_val == HIGH)) { // Verifica se o status mudou
     delay(10);
     REEDCOUNT += 1; // Adiciona 1 a contagem de pulsos
     pb10_old_val = pb10_val; // igual o valor antigo com o atual
 
-    // Imprime o resultado no monitor serial
-    Serial.print("Pluviometric measure (counter): ");
-    Serial.print(REEDCOUNT);
-    Serial.println(" pulse(s)");
-    Serial.print("Pluviometric measure (calculating): ");
-    Serial.print(REEDCOUNT * 0.25);
-    Serial.println(" mm");
+    //Serial.print("Pluviometric measure (counter): "); Serial.print(REEDCOUNT); Serial.println(" pulse(s)");
+    Serial.print("PLUVIOMETRIC HEIGHT: "); Serial.print(REEDCOUNT * 0.25); Serial.println(" mm");
+    saveFile.print("PLUVIOMETRIC HEIGHT: "); saveFile.print(REEDCOUNT * 0.25); saveFile.println(" mm");
   }
   else {
     pb10_old_val = pb10_val; // Nao realizar nada, caso o status nao mude
   }
 
-  // ***** SV10 ***** //
+  // ********** SV10 ********** //
+
   sv10_sample++;
-  Serial.print("Measuring wind speed...");
   windvelocity();
-  Serial.println(" Finished.");
-  Serial.print("SV10 ROTATIONS PER MINUTE: ");
-  Serial.print(sv10_counter);
-  Serial.println(" RPM");
+
+  // SV10: RPM
   RPMcalc();
-  Serial.print(sv10_RPM);
-  Serial.print("WIND SPEED: ");
+  Serial.print("SV10 ROTATIONS PER MINUTE: "); Serial.print(sv10_RPM); Serial.println(" RPM"); // Calcular e imprimir RPM do anemometro
+  saveFile.print("SV10 ROTATIONS PER MINUTE: "); saveFile.print(sv10_RPM); saveFile.println(" RPM");
+  
   // SV10: Imprimir m/s
-  WindSpeed_ms();
-  Serial.print(windspeed_ms);
-  Serial.println(" m/s; "); 
+  Serial.print("WIND SPEED: ");
+  WindSpeed_ms(); // Calcular vel. do vento em m/s
+  Serial.print(windspeed_ms); Serial.print(" m/s; ");
+  saveFile.print(windspeed_ms); saveFile.print(" m/s; ");
+  
   // SV10: Imprimir km/s
-  WindSpeed_kmh();
-  Serial.print(windspeed_kmh);
-  Serial.println(" km/h");  
+  WindSpeed_kmh(); // Calcular vel. do vento em km/h
+  Serial.print(windspeed_kmh); Serial.println(" km/h");
+  saveFile.print(windspeed_kmh); saveFile.println(" km/h");
   delay(2000);
 
-  // ***** BMP280 ***** //
-    //Serial.print(F("Temperature: "));
-    //Serial.print(bmp.readTemperature()); // A temperatura está sendo medida pelo SHT22
-    //Serial.println(" *C");
-    
-    Serial.print("PRESSURE: ");
-    Serial.print(bmp.readPressure());
-    Serial.println(" Pa");
- 
-    //Serial.print(F("Aprox. altitude: "));
-    //Serial.print(bmp.readAltitude(1013.25),0);
-    //Serial.println(" m");
-    delay(2000);
+  // ********** BMP280 ********** //
 
-    // ***** DS18B20 ***** //
-    Serial.print("WATER TEMPERATURE: ");
-    ds18b20_sensor.requestTemperatures();
-    Serial.println(ds18b20_sensor.getTempCByIndex(0));
+  //Serial.print(F("Temperature: ")); Serial.print(bmp.readTemperature()); Serial.println(" *C");
+  //Serial.print(F("Aprox. altitude: ")); Serial.print(bmp.readAltitude(1013.25),0); Serial.println(" m");
+  float barometric_pressure = bmp.readPressure(); // Ler valor de pressao barometrica
+  Serial.print("PRESSURE: "); Serial.print(barometric_pressure); Serial.println(" Pa");
+  saveFile.print("PRESSURE: "); saveFile.print(barometric_pressure); saveFile.println(" Pa");
+  delay(2000);
 
+  // ********** DS18B20 ********** //
+
+  // DS18B20: Temperatura da agua
+  ds18b20_sensor.requestTemperatures();
+  float water_temp = ds18b20_sensor.getTempCByIndex(0);
+  Serial.print("WATER TEMPERATURE: "); Serial.print(water_temp); Serial.println(" C");
+  saveFile.print("WATER TEMPERATURE: "); saveFile.print(water_temp); saveFile.println(" C");
+  
+  // ********** SD Card CLOSE ********** //
+
+  saveFile.close(); // Fecha o arquivo após escrever
+
+  // DATA REQUEST DELAY //
+  delay(DATA_REQUEST_DELAY);
 }
-// ******************** // ******************** //
 
-// ******************** FUNCTIONS ******************** //
+// **************************************** FUNCTIONS **************************************** //
 
 // ***** SV10 ***** //
 void windvelocity(){
@@ -159,4 +192,3 @@ void WindSpeed_kmh(){
 void addcount(){
   sv10_counter++;
 }
-// ******************** // ******************** //
