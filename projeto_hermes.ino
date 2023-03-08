@@ -1,6 +1,6 @@
 #include <Wire.h>
 int DATA_REQUEST_DELAY = 900000; // 15min // A cada tempo DATA_REQUEST_DELAY os dados sao adquiridos e salvos num arquivo
-int loop_num = 0;
+int loop_num = 1; // Contagem da quantidade de loops executados para aquisição de dados
 
 // SD Card
 #include <SD.h>
@@ -8,7 +8,11 @@ int loop_num = 0;
 File saveFile;
 int pinSS = 10;
 
-// Sensor SHT2: Temperatura do ar e umidade relativa
+// LoRa SX1276
+//#include <SPI.h>
+#include <LoRa.h>
+
+// Sensor SHT22: Temperatura do ar e umidade relativa
 #include "DFRobot_SHT20.h" // Importando a biblioteca ./lib/DFRobot_SHT20
 DFRobot_SHT20 sht20; // Inicializando objeto do tipo DFRobot_SHT20
 
@@ -41,23 +45,48 @@ Adafruit_BMP280 bmp; // Inicializando objeto do tipo Adafruit_BMP280 (I2C)
 OneWire oneWire(ds18b20_data);
 DallasTemperature ds18b20_sensor(&oneWire);
 
+// Classe Meliah Summers
+class theBuoy { // Sera utilizado para printar no Serial, SD Card e LoRa
+  public:
+    template <typename T>
+    void print(T x) {
+      Serial.print(x);
+      saveFile.print(x);
+      LoRa.beginPacket(); LoRa.print(x); LoRa.endPacket();
+      return 0;
+    }
+    template <typename T>
+    void println(T x) {
+      Serial.println(x);
+      saveFile.println(x);
+      LoRa.beginPacket(); LoRa.println(x); LoRa.endPacket();
+      return 0;
+    }
+};
+theBuoy Meliah;
+
 // **************************************** VOID SETUP **************************************** //
 void setup() {
   Serial.begin(9600);
 
-  // SD Card //
+  // SD Card
   pinMode(pinSS, OUTPUT); // Declara pinoSS como saída
-  
+ 
   if (SD.begin()) { // Inicializa o SD Card
     Serial.println("SD Card READY."); // Imprime na tela
-    Serial.print("// ***** Loop number: "); Serial.print(loop_num); Serial.println(" ***** //");
-    saveFile.print("// ***** Loop number: "); saveFile.print(loop_num); saveFile.println(" ***** //");
+    Meliah.print("===== DATA REQUEST "); Meliah.print(loop_num); Meliah.println(" =====");
     loop_num++;
   }
-  
   else {
     Serial.println("SD Card initialization FAIL.");
     return;
+  }
+
+  // LoRa SX1276
+  while(!Serial);
+  Serial.println("LoRa initialized!");
+  if (!LoRa.begin(915E6)) { // Inicializa o LoRa na frequencia 915MHz
+    Serial.println("LoRa initialization FAIL!");
   }
 
   // SHT20
@@ -92,13 +121,11 @@ void loop() {
 
   // SHT20: Temperatura do ar
   float air_temp = sht20.readTemperature();
-  Serial.print("AIR TEMPERATURE: "); Serial.print(air_temp, 1); Serial.println("C");
-  saveFile.print("AIR TEMPERATURE: "); saveFile.print(air_temp, 1); saveFile.println("C");
+  Meliah.print("AIR TEMPERATURE: "); Meliah.print(air_temp); Meliah.println("C");
 
   // SHT20: Umidade relativa do ar
   float humidity = sht20.readHumidity();
-  Serial.print("HUMIDITY: "); Serial.print(humidity, 1); Serial.println("%");
-  saveFile.print("HUMIDITY: "); saveFile.print(humidity, 1); saveFile.println("%");
+  Meliah.print("HUMIDITY: "); Meliah.print(humidity); Meliah.println("%");
   delay(1000);
 
   // ********** PB10 ********** //
@@ -110,8 +137,7 @@ void loop() {
     pb10_old_val = pb10_val; // igual o valor antigo com o atual
 
     //Serial.print("Pluviometric measure (counter): "); Serial.print(REEDCOUNT); Serial.println(" pulse(s)");
-    Serial.print("PLUVIOMETRIC HEIGHT: "); Serial.print(REEDCOUNT * 0.25); Serial.println(" mm");
-    saveFile.print("PLUVIOMETRIC HEIGHT: "); saveFile.print(REEDCOUNT * 0.25); saveFile.println(" mm");
+    Meliah.print("PLUVIOMETRIC HEIGHT: "); Meliah.print(REEDCOUNT * 0.25); Meliah.println(" mm");
   }
   else {
     pb10_old_val = pb10_val; // Nao realizar nada, caso o status nao mude
@@ -124,19 +150,16 @@ void loop() {
 
   // SV10: RPM
   RPMcalc();
-  Serial.print("SV10 ROTATIONS PER MINUTE: "); Serial.print(sv10_RPM); Serial.println(" RPM"); // Calcular e imprimir RPM do anemometro
-  saveFile.print("SV10 ROTATIONS PER MINUTE: "); saveFile.print(sv10_RPM); saveFile.println(" RPM");
+  Meliah.print("SV10 ROTATIONS PER MINUTE: "); Meliah.print(sv10_RPM); Meliah.println(" RPM"); // Calcular e imprimir RPM do anemometro
   
   // SV10: Imprimir m/s
-  Serial.print("WIND SPEED: ");
+  Meliah.print("WIND SPEED: ");
   WindSpeed_ms(); // Calcular vel. do vento em m/s
-  Serial.print(windspeed_ms); Serial.print(" m/s; ");
-  saveFile.print(windspeed_ms); saveFile.print(" m/s; ");
+  Meliah.print(windspeed_ms); Meliah.print(" m/s; ");
   
   // SV10: Imprimir km/s
   WindSpeed_kmh(); // Calcular vel. do vento em km/h
-  Serial.print(windspeed_kmh); Serial.println(" km/h");
-  saveFile.print(windspeed_kmh); saveFile.println(" km/h");
+  Meliah.print(windspeed_kmh); Meliah.println(" km/h");
   delay(2000);
 
   // ********** BMP280 ********** //
@@ -144,8 +167,7 @@ void loop() {
   //Serial.print(F("Temperature: ")); Serial.print(bmp.readTemperature()); Serial.println(" *C");
   //Serial.print(F("Aprox. altitude: ")); Serial.print(bmp.readAltitude(1013.25),0); Serial.println(" m");
   float barometric_pressure = bmp.readPressure(); // Ler valor de pressao barometrica
-  Serial.print("PRESSURE: "); Serial.print(barometric_pressure); Serial.println(" Pa");
-  saveFile.print("PRESSURE: "); saveFile.print(barometric_pressure); saveFile.println(" Pa");
+  Meliah.print("PRESSURE: "); Meliah.print(barometric_pressure); Meliah.println(" Pa");
   delay(2000);
 
   // ********** DS18B20 ********** //
@@ -153,8 +175,7 @@ void loop() {
   // DS18B20: Temperatura da agua
   ds18b20_sensor.requestTemperatures();
   float water_temp = ds18b20_sensor.getTempCByIndex(0);
-  Serial.print("WATER TEMPERATURE: "); Serial.print(water_temp); Serial.println(" C");
-  saveFile.print("WATER TEMPERATURE: "); saveFile.print(water_temp); saveFile.println(" C");
+  Meliah.print("WATER TEMPERATURE: "); Meliah.print(water_temp); Meliah.println(" C");
   
   // ********** SD Card CLOSE ********** //
 
