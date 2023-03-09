@@ -23,11 +23,10 @@ int pb10_old_val = 0;
 int REEDCOUNT = 0;
 
 // Sensor SV10: Velocidade do vento
-#define Hall sensor 2 // Pino digital 2
+#define Hall sensor 3 // Pino digital 3
 const float pi = 3.14159265; // Numero pi
 int sv10_period = 5000; // Tempo de medida (ms)
-int sv10_radius = 147; // Raio do anemometro (mm)
-unsigned int sv10_sample = 0; // Numero da amostra
+int sv10_radius = 147; // Raio do anemometro (mm)--
 unsigned int sv10_counter = 0; // Contador do magnetometro para o sensor
 unsigned int sv10_RPM = 0; // Revolucoes por minuto
 float windspeed_ms = 0; // Velocidade do vento (m/s)
@@ -45,7 +44,7 @@ Adafruit_BMP280 bmp; // Inicializando objeto do tipo Adafruit_BMP280 (I2C)
 OneWire oneWire(ds18b20_data);
 DallasTemperature ds18b20_sensor(&oneWire);
 
-// Classe Meliah Summers
+// Classe Merliah Summers
 class theBuoy { // Sera utilizado para printar no Serial, SD Card e LoRa
   public:
     template <typename T>
@@ -63,7 +62,7 @@ class theBuoy { // Sera utilizado para printar no Serial, SD Card e LoRa
       return 0;
     }
 };
-theBuoy Meliah;
+theBuoy Merliah;
 
 // **************************************** VOID SETUP **************************************** //
 void setup() {
@@ -73,8 +72,8 @@ void setup() {
   pinMode(pinSS, OUTPUT); // Declara pinoSS como saída
  
   if (SD.begin()) { // Inicializa o SD Card
-    Serial.println("SD Card READY."); // Imprime na tela
-    Meliah.print("===== DATA REQUEST "); Meliah.print(loop_num); Meliah.println(" =====");
+    Serial.println("SD Card initialized."); // Imprime na tela
+    Merliah.print("===== DATA REQUEST "); Merliah.print(loop_num); Merliah.println(" =====");
     loop_num++;
   }
   else {
@@ -121,11 +120,11 @@ void loop() {
 
   // SHT20: Temperatura do ar
   float air_temp = sht20.readTemperature();
-  Meliah.print("AIR TEMPERATURE: "); Meliah.print(air_temp); Meliah.println("C");
+  Merliah.print("AIR TEMPERATURE: "); Merliah.print(air_temp); Merliah.println("C");
 
   // SHT20: Umidade relativa do ar
   float humidity = sht20.readHumidity();
-  Meliah.print("HUMIDITY: "); Meliah.print(humidity); Meliah.println("%");
+  Merliah.print("HUMIDITY: "); Merliah.print(humidity); Merliah.println("%");
   delay(1000);
 
   // ********** PB10 ********** //
@@ -137,7 +136,7 @@ void loop() {
     pb10_old_val = pb10_val; // igual o valor antigo com o atual
 
     //Serial.print("Pluviometric measure (counter): "); Serial.print(REEDCOUNT); Serial.println(" pulse(s)");
-    Meliah.print("PLUVIOMETRIC HEIGHT: "); Meliah.print(REEDCOUNT * 0.25); Meliah.println(" mm");
+    Merliah.print("PLUVIOMETRIC HEIGHT: "); Merliah.print(REEDCOUNT * 0.25); Merliah.println(" mm");
   }
   else {
     pb10_old_val = pb10_val; // Nao realizar nada, caso o status nao mude
@@ -145,21 +144,20 @@ void loop() {
 
   // ********** SV10 ********** //
 
-  sv10_sample++;
   windvelocity();
 
   // SV10: RPM
   RPMcalc();
-  Meliah.print("SV10 ROTATIONS PER MINUTE: "); Meliah.print(sv10_RPM); Meliah.println(" RPM"); // Calcular e imprimir RPM do anemometro
+  Merliah.print("SV10 ROTATIONS PER MINUTE: "); Merliah.print(sv10_RPM); Merliah.println(" RPM"); // Calcular e imprimir RPM do anemometro
   
   // SV10: Imprimir m/s
-  Meliah.print("WIND SPEED: ");
+  Merliah.print("WIND SPEED: ");
   WindSpeed_ms(); // Calcular vel. do vento em m/s
-  Meliah.print(windspeed_ms); Meliah.print(" m/s; ");
+  Merliah.print(windspeed_ms); Merliah.print(" m/s; ");
   
   // SV10: Imprimir km/s
   WindSpeed_kmh(); // Calcular vel. do vento em km/h
-  Meliah.print(windspeed_kmh); Meliah.println(" km/h");
+  Merliah.print(windspeed_kmh); Merliah.println(" km/h");
   delay(2000);
 
   // ********** BMP280 ********** //
@@ -167,7 +165,7 @@ void loop() {
   //Serial.print(F("Temperature: ")); Serial.print(bmp.readTemperature()); Serial.println(" *C");
   //Serial.print(F("Aprox. altitude: ")); Serial.print(bmp.readAltitude(1013.25),0); Serial.println(" m");
   float barometric_pressure = bmp.readPressure(); // Ler valor de pressao barometrica
-  Meliah.print("PRESSURE: "); Meliah.print(barometric_pressure); Meliah.println(" Pa");
+  Merliah.print("PRESSURE: "); Merliah.print(barometric_pressure); Merliah.println(" Pa");
   delay(2000);
 
   // ********** DS18B20 ********** //
@@ -175,7 +173,7 @@ void loop() {
   // DS18B20: Temperatura da agua
   ds18b20_sensor.requestTemperatures();
   float water_temp = ds18b20_sensor.getTempCByIndex(0);
-  Meliah.print("WATER TEMPERATURE: "); Meliah.print(water_temp); Meliah.println(" C");
+  Merliah.print("WATER TEMPERATURE: "); Merliah.print(water_temp); Merliah.println(" C");
   
   // ********** SD Card CLOSE ********** //
 
