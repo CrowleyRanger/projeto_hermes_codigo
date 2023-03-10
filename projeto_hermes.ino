@@ -12,9 +12,11 @@ int pinSS = 10;
 //#include <SPI.h>
 #include <LoRa.h>
 
-// Sensor SHT22: Temperatura do ar e umidade relativa
-#include "DFRobot_SHT20.h" // Importando a biblioteca ./lib/DFRobot_SHT20
-DFRobot_SHT20 sht20; // Inicializando objeto do tipo DFRobot_SHT20
+// Sensor DHT22: Temperatura do ar e umidade relativa
+#include "DHT.h" // Importando a biblioteca ./lib/DHT_sensor_library-1.4.4
+#define DHTPIN 8 // Definindo para o pino 8
+#define DHTTYPE DHT22 // Definindo o tipo do sensor DHT
+DHT dht(DHTPIN, DHTTYPE); // Inicializando objeto do tipo DHT
 
 // Sensor PB10: Pluviometro
 const int REED = 6;
@@ -43,6 +45,16 @@ Adafruit_BMP280 bmp; // Inicializando objeto do tipo Adafruit_BMP280 (I2C)
 #define ds18b20_data 2
 OneWire oneWire(ds18b20_data);
 DallasTemperature ds18b20_sensor(&oneWire);
+
+// Sensor MPU6050: Acelerometro
+#include "Wire.h"
+#include "I2Cdev.h"
+#include "MPU6050.h"
+MPU6050 mpu;
+double altitude, amplitude_minima, amplitude_maxima, amplitude_onda, ponto_medio, fator_smudge;
+byte escaped, started;
+unsigned long inicio_periodo, fim_periodo, frequencia;
+float periodo_medio = -1;
 
 // Classe Merliah Summers
 class theBuoy { // Sera utilizado para printar no Serial, SD Card e LoRa
@@ -73,7 +85,7 @@ void setup() {
  
   if (SD.begin()) { // Inicializa o SD Card
     Serial.println("SD Card initialized."); // Imprime na tela
-    Merliah.print("===== DATA REQUEST "); Merliah.print(loop_num); Merliah.println(" =====");
+    Merliah.print("===== DATA REQUEST " + (String)loop_num + " =====");
     loop_num++;
   }
   else {
@@ -88,8 +100,8 @@ void setup() {
     Serial.println("LoRa initialization FAIL!");
   }
 
-  // SHT20
-  sht20.initSHT20(); // Inicializando o SHT20
+  // DHT22
+  dht.begin(); // Inicializando o DHT22
 
   // PB10
   pinMode(REED, INPUT_PULLUP);
@@ -100,7 +112,14 @@ void setup() {
 
   // DS18B20
   ds18b20_sensor.begin(); // Inicia a biblioteca DallasTemperature
-  
+
+  // MPU6050
+  Wire.begin();
+  Serial.println("Inicializando dispositivos I2C...");
+  mpu.setI2CMasterModeEnabled(false);
+  mpu.setI2CBypassEnabled(true) ;
+  mpu.setSleepEnabled(false);
+  mpu.initialize();
 }
 
 // **************************************** VOID LOOP **************************************** //
@@ -116,15 +135,15 @@ void loop() {
     Serial.println("Save file opening ERROR!"); // Imprime na tela
   }
 
-  // ********** SHT20 ********** //
+  // ********** DHT22 ********** //
 
-  // SHT20: Temperatura do ar
-  float air_temp = sht20.readTemperature();
-  Merliah.print("AIR TEMPERATURE: "); Merliah.print(air_temp); Merliah.println("C");
+  // DHT22: Temperatura do ar
+  float air_temp = dht.readTemperature();
+  Merliah.print("AIR TEMPERATURE: " + (String)air_temp + "C");
 
-  // SHT20: Umidade relativa do ar
-  float humidity = sht20.readHumidity();
-  Merliah.print("HUMIDITY: "); Merliah.print(humidity); Merliah.println("%");
+  // DHT22: Umidade relativa do ar
+  float humidity = dht.readHumidity();
+  Merliah.print("HUMIDITY: " + (String)humidity + "%");
   delay(1000);
 
   // ********** PB10 ********** //
@@ -136,7 +155,7 @@ void loop() {
     pb10_old_val = pb10_val; // igual o valor antigo com o atual
 
     //Serial.print("Pluviometric measure (counter): "); Serial.print(REEDCOUNT); Serial.println(" pulse(s)");
-    Merliah.print("PLUVIOMETRIC HEIGHT: "); Merliah.print(REEDCOUNT * 0.25); Merliah.println(" mm");
+    Merliah.print("PLUVIOMETRIC HEIGHT: " + (String)(REEDCOUNT * 0.25) + " mm");
   }
   else {
     pb10_old_val = pb10_val; // Nao realizar nada, caso o status nao mude
@@ -144,20 +163,17 @@ void loop() {
 
   // ********** SV10 ********** //
 
-  windvelocity();
-
   // SV10: RPM
   RPMcalc();
-  Merliah.print("SV10 ROTATIONS PER MINUTE: "); Merliah.print(sv10_RPM); Merliah.println(" RPM"); // Calcular e imprimir RPM do anemometro
+  Merliah.print("SV10 ROTATIONS PER MINUTE: " + (String)sv10_RPM + " RPM"); // Calcular e imprimir RPM do anemometro
   
   // SV10: Imprimir m/s
-  Merliah.print("WIND SPEED: ");
   WindSpeed_ms(); // Calcular vel. do vento em m/s
-  Merliah.print(windspeed_ms); Merliah.print(" m/s; ");
+  Merliah.print("WIND SPEED: " + (String)windspeed_ms + " m/s; ");
   
   // SV10: Imprimir km/s
   WindSpeed_kmh(); // Calcular vel. do vento em km/h
-  Merliah.print(windspeed_kmh); Merliah.println(" km/h");
+  Merliah.println((String)windspeed_kmh + " km/h");
   delay(2000);
 
   // ********** BMP280 ********** //
@@ -165,7 +181,7 @@ void loop() {
   //Serial.print(F("Temperature: ")); Serial.print(bmp.readTemperature()); Serial.println(" *C");
   //Serial.print(F("Aprox. altitude: ")); Serial.print(bmp.readAltitude(1013.25),0); Serial.println(" m");
   float barometric_pressure = bmp.readPressure(); // Ler valor de pressao barometrica
-  Merliah.print("PRESSURE: "); Merliah.print(barometric_pressure); Merliah.println(" Pa");
+  Merliah.println("PRESSURE: " + (String)barometric_pressure + " Pa");
   delay(2000);
 
   // ********** DS18B20 ********** //
@@ -173,7 +189,65 @@ void loop() {
   // DS18B20: Temperatura da agua
   ds18b20_sensor.requestTemperatures();
   float water_temp = ds18b20_sensor.getTempCByIndex(0);
-  Merliah.print("WATER TEMPERATURE: "); Merliah.print(water_temp); Merliah.println(" C");
+  Merliah.println("WATER TEMPERATURE: " + (String)water_temp + " C");
+
+  // ********** MPU6050 ********** //
+
+  unsigned long tempo_inicio = millis(); // Adquire o tempo em milisegundos o tempo de início
+  barometric_pressure = bmp.readPressure();
+  altitude = bmp.readAltitude(barometric_pressure);
+  amplitude_maxima = altitude;
+  amplitude_minima = altitude;
+
+  // Por 15 segundos
+  while(millis() - tempo_inicio < 15000){
+    barometric_pressure = bmp.readPressure();
+    altitude = bmp.readAltitude(barometric_pressure);
+    if (altitude < amplitude_minima) amplitude_minima = altitude;
+    if (altitude > amplitude_maxima) amplitude_maxima = altitude;
+  }
+  amplitude_onda = (amplitude_maxima - amplitude_minima)/2.0;
+  ponto_medio = (amplitude_maxima + amplitude_minima)/2.0;
+  fator_smudge = (amplitude_maxima - ponto_medio)*0.15;
+  
+  tempo_inicio = millis();
+  // Por 15 segundos 
+  while(millis() - tempo_inicio < 15000){
+    barometric_pressure = bmp.readPressure();
+    altitude = bmp.readAltitude(barometric_pressure);
+    //    se dentro de uma margem de 30% da amplitude de onda a partier do ponto médio
+    //    inicia o temporizador de outra forma o para
+    if (altitude < ponto_medio + fator_smudge && altitude > ponto_medio - fator_smudge){
+      if ( !started){
+        inicio_periodo = millis();
+        started = true;
+      }
+      else{
+        if ( escaped ){
+          // se este foi iniciado e escapado e agora está retornando
+          fim_periodo = millis();
+          started = false;
+          escaped = false;
+          // se a variável já foi atribuida
+          // usa estes valores prévios e novos valores para trabalhar o médio
+          if(periodo_medio != -1){
+            periodo_medio = (periodo_medio + (fim_periodo-inicio_periodo)*2)  / 2.0;
+          }
+          // atribui este
+          else{
+            periodo_medio =  (fim_periodo-inicio_periodo)*2; 
+          }
+        }
+      }
+    }
+    else{
+      escaped = true;
+    } 
+  }
+  frequencia = 1/(periodo_medio/1000);
+  
+  Merliah.println("FREQUENCIA DA ONDA: " + (String)frequencia + " Hz");
+  Merliah.println("AMPLITUDE DA ONDA: " + (String)amplitude_onda + " m");
   
   // ********** SD Card CLOSE ********** //
 
@@ -186,17 +260,7 @@ void loop() {
 // **************************************** FUNCTIONS **************************************** //
 
 // ***** SV10 ***** //
-void windvelocity(){
-  windspeed_ms = 0;
-  windspeed_kmh = 0;
-  
-  sv10_counter = 0;  
-  attachInterrupt(0, addcount, RISING);
-  unsigned long millis();       
-  long startTime = millis();
-  while(millis() < startTime + sv10_period) {
-  }
-}
+
 void RPMcalc(){
   sv10_RPM=((sv10_counter)*60)/(sv10_period/1000);  // Calculo de RPM
 }
