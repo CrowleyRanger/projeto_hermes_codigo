@@ -51,10 +51,10 @@ DallasTemperature ds18b20_sensor(&oneWire);
 #include "I2Cdev.h"
 #include "MPU6050.h"
 MPU6050 mpu;
-double altitude, amplitude_minima, amplitude_maxima, amplitude_onda, ponto_medio, fator_smudge;
-byte escaped, started;
-unsigned long inicio_periodo, fim_periodo, frequencia;
-float periodo_medio = -1;
+double altitude, amplitude_minima, amplitude_maxima, amplitude_onda, mean_point, smudge_factor;
+byte escaped_smudge, mpu_started;
+unsigned long mpu_startTime, mpu_endTime, frequencia;
+float mean_period = -1;
 
 // Classe Merliah Summers
 class theBuoy { // Sera utilizado para printar no Serial, SD Card e LoRa
@@ -163,6 +163,8 @@ void loop() {
 
   // ********** SV10 ********** //
 
+  windvelocity();
+
   // SV10: RPM
   RPMcalc();
   Merliah.print("SV10 ROTATIONS PER MINUTE: " + (String)sv10_RPM + " RPM"); // Calcular e imprimir RPM do anemometro
@@ -194,57 +196,56 @@ void loop() {
   // ********** MPU6050 ********** //
 
   unsigned long tempo_inicio = millis(); // Adquire o tempo em milisegundos o tempo de início
-  barometric_pressure = bmp.readPressure();
-  altitude = bmp.readAltitude(barometric_pressure);
+  barometric_pressure = bmp.readPressure(); // Le a pressao barometrica
+  altitude = bmp.readAltitude(barometric_pressure); // Le a altitude
   amplitude_maxima = altitude;
   amplitude_minima = altitude;
 
-  // Por 15 segundos
-  while(millis() - tempo_inicio < 15000){
+  while(millis() - tempo_inicio < 15000){ // Por 15 segundos 
     barometric_pressure = bmp.readPressure();
     altitude = bmp.readAltitude(barometric_pressure);
-    if (altitude < amplitude_minima) amplitude_minima = altitude;
-    if (altitude > amplitude_maxima) amplitude_maxima = altitude;
+    if (altitude < amplitude_minima) {
+      amplitude_minima = altitude;
+    } 
+    if (altitude > amplitude_maxima) {
+      amplitude_maxima = altitude;
+    }
   }
-  amplitude_onda = (amplitude_maxima - amplitude_minima)/2.0;
-  ponto_medio = (amplitude_maxima + amplitude_minima)/2.0;
-  fator_smudge = (amplitude_maxima - ponto_medio)*0.15;
+  amplitude_onda = (amplitude_maxima - amplitude_minima)/2.0; // Calcula e registra a altitude da onda segunda dados adquiridos em 15 segundos
+  mean_point = (amplitude_maxima + amplitude_minima)/2.0; // Calcula e registra a altitude do ponto medio entre amplitudes max e min
+  smudge_factor = (amplitude_maxima - mean_point)*0.15; // Calcula e registra o fator smudge da onda
   
-  tempo_inicio = millis();
-  // Por 15 segundos 
-  while(millis() - tempo_inicio < 15000){
+  tempo_inicio = millis(); // Registra tempo de operacao atual (ms)
+  
+  while(millis() - tempo_inicio < 15000) { // Por 15 segundos 
     barometric_pressure = bmp.readPressure();
     altitude = bmp.readAltitude(barometric_pressure);
-    //    se dentro de uma margem de 30% da amplitude de onda a partier do ponto médio
-    //    inicia o temporizador de outra forma o para
-    if (altitude < ponto_medio + fator_smudge && altitude > ponto_medio - fator_smudge){
-      if ( !started){
-        inicio_periodo = millis();
-        started = true;
+    // Se dentro de uma margem de 30% da amplitude de onda a partier do ponto medio
+    // Inicia o temporizador de outra forma o para
+    if (altitude < mean_point + smudge_factor && altitude > mean_point - smudge_factor) { // True se a altitude estiver dentro do fator smudge
+      if (!mpu_started){
+        mpu_startTime = millis();
+        mpu_started = true;
       }
-      else{
-        if ( escaped ){
-          // se este foi iniciado e escapado e agora está retornando
-          fim_periodo = millis();
-          started = false;
-          escaped = false;
-          // se a variável já foi atribuida
-          // usa estes valores prévios e novos valores para trabalhar o médio
-          if(periodo_medio != -1){
-            periodo_medio = (periodo_medio + (fim_periodo-inicio_periodo)*2)  / 2.0;
+      else {
+        if (escaped_smudge) { // Caso a altitude tenha escapado a delimitacao max e/ou min do fator smudge
+          mpu_endTime = millis(); // mpu_endTime eh atribuido quando escapa o fator smudge
+          mpu_started = false;
+          escaped_smudge = false;
+          if (mean_period != -1) { // Executado apos a primeira vez
+            mean_period = (mean_period + (mpu_endTime - mpu_startTime)*2)/2.0; // Periodo medio
           }
-          // atribui este
-          else{
-            periodo_medio =  (fim_periodo-inicio_periodo)*2; 
+          else { // Executado apenas a primeira vez
+            mean_period = (mpu_endTime - mpu_startTime)*2; // Periodo medio inicial: 
           }
         }
       }
     }
-    else{
-      escaped = true;
+    else {
+      escaped_smudge = true; // A altitude ultrapassou as delimitacoes max e/ou min do fator smudge
     } 
   }
-  frequencia = 1/(periodo_medio/1000);
+  frequencia = 1/(mean_period/1000);
   
   Merliah.println("FREQUENCIA DA ONDA: " + (String)frequencia + " Hz");
   Merliah.println("AMPLITUDE DA ONDA: " + (String)amplitude_onda + " m");
@@ -261,15 +262,26 @@ void loop() {
 
 // ***** SV10 ***** //
 
+void windvelocity(){
+  windspeed_ms = 0;
+  windspeed_kmh = 0;
+  sv10_counter = 0;  
+  attachInterrupt(0, addcount, RISING);
+  unsigned long millis();       
+  long sv10_startTime = millis();
+  while(millis() < sv10_startTime + sv10_period) { // Fica dentro do loop ate o contador millis alcancar sv10_period de 5s
+  }
+}
+
 void RPMcalc(){
   sv10_RPM=((sv10_counter)*60)/(sv10_period/1000);  // Calculo de RPM
 }
 void WindSpeed_ms(){
-  windspeed_ms = ((4 * pi * sv10_radius * sv10_RPM)/60) / 1000;  // Calculo da velocidade do vento em m/s
+  windspeed_ms = ((2*pi*sv10_radius*sv10_RPM)/60)/1000;  // Calculo da velocidade do vento em m/s
  
 }
 void WindSpeed_kmh(){
-  windspeed_kmh = (((4 * pi * sv10_radius * sv10_RPM)/60) / 1000)*3.6;  // Calculo da velocidade do vento em km/h
+  windspeed_kmh = (((2*pi*sv10_radius*sv10_RPM)/60)/1000)*3.6;  // Calculo da velocidade do vento em km/h
  
 }
 void addcount(){
