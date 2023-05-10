@@ -5,12 +5,13 @@ int loop_num = 1; // Contagem da quantidade de loops executados para aquisição
 // SD Card
 #include <SD.h>
 #include <SPI.h>
-File saveFile;
 int pinSS = 10;
 
 // LoRa SX1276
 //#include <SPI.h>
 #include <LoRa.h>
+#define LoRa_CS 27
+File saveFile;
 
 // Sensor DHT22: Temperatura do ar e umidade relativa
 #include "DHT.h" // Importando a biblioteca ./lib/DHT_sensor_library-1.4.4
@@ -95,7 +96,8 @@ void setup() {
 
   // LoRa SX1276
   while(!Serial);
-  Serial.println("LoRa initialized!");
+  Serial.println("LoRa initializing!");
+  LoRa.setPins(LoRa_CS);
   if (!LoRa.begin(915E6)) { // Inicializa o LoRa na frequencia 915MHz
     Serial.println("LoRa initialization FAIL!");
   }
